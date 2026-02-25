@@ -166,8 +166,9 @@ if st.session_state.is_finished:
             with st.spinner("正在安全同步您的实验数据..."):
                 # 1. 初始化 Firebase (确保只初始化一次)
                 if not firebase_admin._apps:
-                    # 请确保将你下载的私钥文件重命名为 firebase_key.json 并放在项目根目录
-                    cred = credentials.Certificate("mental_healthcare_chatbot_key.json")
+                    # 将 Streamlit Secrets 转换为字典传入
+                    firebase_creds = dict(st.secrets["firebase"])
+                    cred = credentials.Certificate(firebase_creds)
                     firebase_admin.initialize_app(cred)
                 
                 db = firestore.client()
