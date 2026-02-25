@@ -3,3 +3,4 @@ openai
 python-dotenv
 qrcode
 pillow
+firebase-admin

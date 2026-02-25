@@ -6,8 +6,11 @@ import urllib.parse
 import qrcode
 from PIL import Image
 import io
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 import logic
+
 
 # 基础配置与状态初始化 (Setup & State Management)
 st.set_page_config(
@@ -154,12 +157,46 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
 if st.session_state.is_finished:
     st.divider()
     st.success("🕒 本次咨询体验时间已到。")
+
+    if "data_saved" not in st.session_state:
+        st.session_state.data_saved = False
+
+    if not st.session_state.data_saved:
+        try:
+            with st.spinner("正在安全同步您的实验数据..."):
+                # 1. 初始化 Firebase (确保只初始化一次)
+                if not firebase_admin._apps:
+                    # 请确保将你下载的私钥文件重命名为 firebase_key.json 并放在项目根目录
+                    cred = credentials.Certificate("mental_healthcare_chatbot_key.json")
+                    firebase_admin.initialize_app(cred)
+                
+                db = firestore.client()
+                
+                # 2. 准备数据包
+                final_group_id = f"{st.session_state.group_acc}_{st.session_state.group_exp}"
+                doc_data = {
+                    "user_id": st.session_state.user_id,
+                    "group_acc": st.session_state.group_acc,
+                    "group_exp": st.session_state.group_exp,
+                    "group_id": final_group_id,
+                    "chat_history": st.session_state.messages,
+                    "timestamp": firestore.SERVER_TIMESTAMP # 云端自动生成精确时间
+                }
+                
+                # 3. 写入云端 (存入名为 'sessions' 的集合中)
+                db.collection('sessions').document(st.session_state.user_id).set(doc_data)
+                
+                # 4. 锁定状态，防止重复上传
+                st.session_state.data_saved = True
+                print(f">>> 数据库同步成功: {st.session_state.user_id}")
+        except Exception as e:
+            print(f"!!! 数据库同步失败: {e}")
     
     st.markdown("### 🎉 感谢您的参与")
     st.write("为了帮助我们改进系统，请填写一份简短的反馈问卷（约 1 分钟）。")
     st.caption("您的实验分组 ID 已自动包含在链接中，请直接扫码或点击填写。")
     
-    # 请将此处替换为你们真实的 Qualtrics/问卷星 链接
+    # 请将此处替换为真实的 Qualtrics/问卷星 链接
     BASE_SURVEY_URL = "https://www.qualtrics.com/jfe/form/SV_example123"
     
     # 组合分组 ID (例如: High_Low)
