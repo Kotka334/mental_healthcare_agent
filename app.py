@@ -20,15 +20,46 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+def get_first_query_param(query_params, names):
+    """Return the first non-empty query parameter value from a list of possible names."""
+    for name in names:
+        if name not in query_params:
+            continue
+
+        value = query_params[name]
+        if isinstance(value, list):
+            value = value[0] if value else ""
+
+        value = str(value).strip()
+        if value:
+            return value, name
+
+    return None, None
+
 def init_session_state():
     """初始化用户 Session，处理随机分组或强制分组逻辑"""
     if "user_id" not in st.session_state:
-        # 生成唯一用户标识
-        st.session_state.user_id = str(uuid.uuid4())[:8] # 取前8位
-        
         # 获取 URL 参数
-        # 格式示例: /?acc=High&exp=Low
+        # 格式示例: /?uid=TEST001&acc=High&exp=Low
         qp = st.query_params
+
+        # 优先使用问卷平台通过 URL 传来的 ID；没有传入时再生成本地测试 ID
+        incoming_user_id, incoming_id_key = get_first_query_param(
+            qp,
+            [
+                "uid", "userid", "user_id",
+                "用户ID", "userID", "UserID",
+                "answer_id", "response_id", "respondent_id", "rid", "id",
+                "作答ID", "答卷ID", "答题ID"
+            ]
+        )
+        if incoming_user_id:
+            st.session_state.user_id = incoming_user_id
+            st.session_state.user_id_source = f"URL 参数: {incoming_id_key}"
+        else:
+            st.session_state.user_id = str(uuid.uuid4())[:8] # 取前8位
+            st.session_state.user_id_source = "本地随机生成"
+        st.session_state.initial_query_params = dict(qp)
         
         if "acc" in qp and qp["acc"] in ["High", "Low"]:
             st.session_state.group_acc = qp["acc"]
@@ -73,6 +104,8 @@ def render_header():
             # [调试水印] 仅方便教授确认当前组别
             st.markdown("---")
             st.caption(f"🔧 Debug: [{group_acc} Acc / {group_exp} Exp]")
+            st.caption(f"🆔 UID: {st.session_state.user_id}")
+            st.caption(f"ID Source: {st.session_state.user_id_source}")
 
         # 主界面 Banner (医疗蓝)
         st.markdown(
@@ -95,6 +128,8 @@ def render_header():
             # [调试水印]
             st.markdown("---")
             st.caption(f"🔧 Debug: [{group_acc} Acc / {group_exp} Exp]")
+            st.caption(f"🆔 UID: {st.session_state.user_id}")
+            st.caption(f"ID Source: {st.session_state.user_id_source}")
         
         # 主界面 Banner (警告黄)
         st.markdown(
