@@ -2,14 +2,13 @@ import streamlit as st
 import uuid
 import time
 import random
-import urllib.parse
-import qrcode
-from PIL import Image
-import io
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 import logic
+
+CHAT_DURATION_MINUTES = 5.0
+TOPIC_OPTIONS = ["工作", "学习", "人际关系", "其他"]
 
 
 # 基础配置与状态初始化 (Setup & State Management)
@@ -75,6 +74,7 @@ def init_session_state():
         st.session_state.messages = []      
         st.session_state.start_time = None  
         st.session_state.is_finished = False 
+        st.session_state.topic = None
         
         # 预加载开场白
         greeting_text = logic.get_group_settings(st.session_state)
@@ -100,12 +100,6 @@ def render_header():
             st.info("✅ **资质认证**\n\n由 [认知科学研究院] 与 [中心医院] 联合监制。\n\n伦理审查编号: IRB-2025-CN")
             st.markdown("---")
             st.caption("© 2025 NeuroCognitive Institute.")
-            
-            # [调试水印] 仅方便教授确认当前组别
-            st.markdown("---")
-            st.caption(f"🔧 Debug: [{group_acc} Acc / {group_exp} Exp]")
-            st.caption(f"🆔 UID: {st.session_state.user_id}")
-            st.caption(f"ID Source: {st.session_state.user_id_source}")
 
         # 主界面 Banner (医疗蓝)
         st.markdown(
@@ -124,12 +118,6 @@ def render_header():
             st.header("🚧 Dev Mode")
             st.warning("⚠️ **免责声明**\n\n这是一个开源社区的 Beta 测试项目。\nAI 回复仅供娱乐，可能包含错误。")
             st.markdown("[GitHub Repo (v0.9)](https://github.com)")
-            
-            # [调试水印]
-            st.markdown("---")
-            st.caption(f"🔧 Debug: [{group_acc} Acc / {group_exp} Exp]")
-            st.caption(f"🆔 UID: {st.session_state.user_id}")
-            st.caption(f"ID Source: {st.session_state.user_id_source}")
         
         # 主界面 Banner (警告黄)
         st.markdown(
@@ -143,6 +131,21 @@ def render_header():
 
 # 执行 UI 渲染
 render_header()
+
+def render_topic_selection():
+    st.markdown("### 请选择您想咨询的话题")
+
+    col1, col2 = st.columns(2)
+    for index, topic in enumerate(TOPIC_OPTIONS):
+        column = col1 if index % 2 == 0 else col2
+        with column:
+            if st.button(topic, key=f"topic_{topic}", use_container_width=True):
+                st.session_state.topic = topic
+                st.rerun()
+
+if not st.session_state.topic:
+    render_topic_selection()
+    st.stop()
 
 # 聊天主界面
 
@@ -166,21 +169,17 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
     # 1. 启动隐形计时器
     if st.session_state.start_time is None:
         st.session_state.start_time = time.time()
+
+    elapsed_min = (time.time() - st.session_state.start_time) / 60
+    if elapsed_min >= CHAT_DURATION_MINUTES:
+        st.session_state.is_finished = True
+        st.rerun()
     
     # 2. 显示用户消息
     with st.chat_message("user"):
         st.write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
-    elapsed_min = (time.time() - st.session_state.start_time) / 60
-    
-    phase_3_threshold = 9.0
-    is_time_up = elapsed_min >= 10.0
-    
-    if is_time_up:
-        st.session_state.is_finished = True
-        st.rerun()
-    
+
     with st.chat_message("assistant"):
         with st.spinner("..."): 
             response_text = logic.generate_ai_response(st.session_state, prompt)
@@ -188,10 +187,15 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
     
     st.session_state.messages.append({"role": "assistant", "content": response_text})
 
-# 实验结束与数据闭环 (Data Loop & QR Code)
+    elapsed_min = (time.time() - st.session_state.start_time) / 60
+    if elapsed_min >= CHAT_DURATION_MINUTES:
+        st.session_state.is_finished = True
+        st.rerun()
+
+# 实验结束与数据闭环
 if st.session_state.is_finished:
     st.divider()
-    st.success("🕒 本次咨询体验时间已到。")
+    st.success("本次对话已结束，感谢您的使用。")
 
     if "data_saved" not in st.session_state:
         st.session_state.data_saved = False
@@ -215,6 +219,7 @@ if st.session_state.is_finished:
                     "group_acc": st.session_state.group_acc,
                     "group_exp": st.session_state.group_exp,
                     "group_id": final_group_id,
+                    "topic": st.session_state.topic,
                     "chat_history": st.session_state.messages,
                     "timestamp": firestore.SERVER_TIMESTAMP # 云端自动生成精确时间
                 }
@@ -227,38 +232,3 @@ if st.session_state.is_finished:
                 print(f">>> 数据库同步成功: {st.session_state.user_id}")
         except Exception as e:
             print(f"!!! 数据库同步失败: {e}")
-    
-    st.markdown("### 🎉 感谢您的参与")
-    st.write("为了帮助我们改进系统，请填写一份简短的反馈问卷（约 1 分钟）。")
-    st.caption("您的实验分组 ID 已自动包含在链接中，请直接扫码或点击填写。")
-    
-    # 请将此处替换为真实的 Qualtrics/问卷星 链接
-    BASE_SURVEY_URL = "https://www.qualtrics.com/jfe/form/SV_example123"
-    
-    # 组合分组 ID (例如: High_Low)
-    final_group_id = f"{st.session_state.group_acc}_{st.session_state.group_exp}"
-    
-    params = {
-        "group": final_group_id,    # 对应问卷平台的 Embedded Data 'group'
-        "uid": st.session_state.user_id # 对应 Embedded Data 'uid'
-    }
-    final_url = f"{BASE_SURVEY_URL}?{urllib.parse.urlencode(params)}"
-    
-    # --- 生成二维码 ---
-    qr = qrcode.QRCode(box_size=10, border=4)
-    qr.add_data(final_url)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    
-    # 将 PIL 图片转换为字节流
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='PNG')
-    
-    # 布局：左边二维码，右边按钮
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.image(img_byte_arr.getvalue(), width=150)
-    with col2:
-        st.markdown(f"<br>", unsafe_allow_html=True) 
-        st.link_button("👉 点击直接跳转问卷", final_url, type="primary")
-        st.caption(f"Session ID: {st.session_state.user_id}")

@@ -35,17 +35,17 @@ def calculate_stage(start_time):
     
     elapsed_minutes = (time.time() - start_time) / 60
     
-    # 实验时间设定 (标准 10 分钟)
-    # Phase 1: 0-3 分钟 (倾听)
-    # Phase 2: 3-9 分钟 (建议)
-    # Phase 3: 9-10 分钟 (结束)
+    # 实验时间设定 (标准 5 分钟)
+    # Phase 1: 0-1.5 分钟 (倾听)
+    # Phase 2: 1.5-4.5 分钟 (建议)
+    # Phase 3: 4.5-5 分钟 (结束)
     
-    if elapsed_minutes < 3.0:
-        return "Phase 1", elapsed_minutes / 10.0
-    elif elapsed_minutes < 9.0:
-        return "Phase 2", elapsed_minutes / 10.0
+    if elapsed_minutes < 1.5:
+        return "Phase 1", elapsed_minutes / 5.0
+    elif elapsed_minutes < 4.5:
+        return "Phase 2", elapsed_minutes / 5.0
     else:
-        return "Phase 3", elapsed_minutes / 10.0
+        return "Phase 3", elapsed_minutes / 5.0
 
 def clean_json_string(json_str):
     """
@@ -110,6 +110,13 @@ def generate_ai_response(session_state, user_input):
     
     # 2. 组装 System Prompt
     system_instruction = prompts.COMMON_SYSTEM_PROMPT
+    topic = session_state.get("topic")
+    if topic:
+        system_instruction += (
+            f"\n\n本轮咨询主题是：{topic}。"
+            "请围绕该主题理解用户困扰、进行回应和提供建议；"
+            "如用户明显偏离主题，请温和地将对话带回该主题。"
+        )
     
     # === Phase 1: 倾听 ===
     if current_stage == "Phase 1":
