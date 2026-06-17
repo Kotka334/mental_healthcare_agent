@@ -18,12 +18,9 @@ client = OpenAI(
 MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4.1")
 
 def get_group_settings(session_state):
-    """根据组别获取开场白"""
-    if session_state['group_acc'] == 'High':
-        greeting = prompts.GREETING_HIGH_ACC
-    else:
-        greeting = prompts.GREETING_LOW_ACC
-    return greeting
+    """根据用户选择的话题获取开场白"""
+    topic = session_state.get("sub_topic") if session_state.get("topic") == "其他" else session_state.get("topic")
+    return f"请问您最近在{topic}上有什么困扰？"
 
 def calculate_stage(start_time):
     """
@@ -37,7 +34,7 @@ def calculate_stage(start_time):
     
     # 实验时间设定 (标准 5 分钟)
     # Phase 1: 0-1.5 分钟 (倾听)
-    # Phase 2: 1.5-4.5 分钟 (建议)
+    # Phase 2: 1.5-4.5 分钟 (诊断与建议)
     # Phase 3: 4.5-5 分钟 (结束)
     
     if elapsed_minutes < 1.5:
@@ -110,7 +107,7 @@ def generate_ai_response(session_state, user_input):
     
     # 2. 组装 System Prompt
     system_instruction = prompts.COMMON_SYSTEM_PROMPT
-    topic = session_state.get("topic")
+    topic = session_state.get("sub_topic") if session_state.get("topic") == "其他" else session_state.get("topic")
     if topic:
         system_instruction += (
             f"\n\n本轮咨询主题是：{topic}。"

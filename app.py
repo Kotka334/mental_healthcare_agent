@@ -75,10 +75,9 @@ def init_session_state():
         st.session_state.start_time = None  
         st.session_state.is_finished = False 
         st.session_state.topic = None
-        
-        # 预加载开场白
-        greeting_text = logic.get_group_settings(st.session_state)
-        st.session_state.messages.append({"role": "assistant", "content": greeting_text})
+        st.session_state.sub_topic = None
+        st.session_state.pending_other_topic = False
+        st.session_state.greeting_added = False
         
         # 后台日志
         print(f"User Init: {st.session_state.user_id} | Group: {st.session_state.group_acc} / {st.session_state.group_exp}")
@@ -89,72 +88,69 @@ init_session_state()
 # 动态 UI 渲染
 def render_header():
     group_acc = st.session_state.group_acc
-    group_exp = st.session_state.group_exp
+    sidebar_text = (
+        "**资质认证**\n\n"
+        "本系统由专业研究团队监制，旨在为用户提供结构化的心理健康支持体验。"
+    )
+    if group_acc != "High":
+        sidebar_text = (
+            "**免责声明**\n\n"
+            "本系统为科研测试用途，回复内容仅供参考，不作为医学诊断或治疗依据。"
+        )
     
-    # 场景 A: High Accountability
-    if group_acc == "High":
-        # 侧边栏
-        with st.sidebar:
-            st.image("https://img.icons8.com/color/96/caduceus.png", width=60) # 蛇杖图标
-            st.markdown("### NeuroHelp™ 认知系统")
-            st.info("✅ **资质认证**\n\n由 [认知科学研究院] 与 [中心医院] 联合监制。\n\n伦理审查编号: IRB-2025-CN")
-            st.markdown("---")
-            st.caption("© 2025 NeuroCognitive Institute.")
-
-        # 主界面 Banner (医疗蓝)
-        st.markdown(
-            """
-            <div style='background-color: #ebf8ff; padding: 15px; border-radius: 8px; border-left: 5px solid #2b6cb0; margin-bottom: 20px;'>
-                <h3 style='color: #2c5282; margin:0; font-size: 20px;'>🏥 NeuroHelp Professional</h3>
-                <p style='color: #4a5568; margin:0; font-size: 14px;'>基于临床循证心理学(EBP)的专业辅助系统</p>
-            </div>
-            """, unsafe_allow_html=True
-        )
-
-    # 场景 B: Low Accountability
-    else:
-        # 侧边栏
-        with st.sidebar:
-            st.header("🚧 Dev Mode")
-            st.warning("⚠️ **免责声明**\n\n这是一个开源社区的 Beta 测试项目。\nAI 回复仅供娱乐，可能包含错误。")
-            st.markdown("[GitHub Repo (v0.9)](https://github.com)")
-        
-        # 主界面 Banner (警告黄)
-        st.markdown(
-            """
-            <div style='background-color: #fffaf0; padding: 15px; border-radius: 8px; border: 1px dashed #ed8936; margin-bottom: 20px;'>
-                <h3 style='color: #c05621; margin:0; font-size: 20px;'>⚠️ ChatBot Beta v0.9</h3>
-                <p style='color: #744210; margin:0; font-size: 14px;'>实验性项目 | 不保证准确性 | 仅供测试</p>
-            </div>
-            """, unsafe_allow_html=True
-        )
+    with st.sidebar:
+        st.image("https://img.icons8.com/color/96/caduceus.png", width=60)
+        st.markdown("### 心理健康聊天机器人")
+        st.info(sidebar_text)
 
 # 执行 UI 渲染
 render_header()
 
+st.session_state.setdefault("topic", None)
+st.session_state.setdefault("sub_topic", None)
+st.session_state.setdefault("pending_other_topic", False)
+st.session_state.setdefault("greeting_added", False)
+
 def render_topic_selection():
     st.markdown("### 请选择您想咨询的话题")
+
+    if st.session_state.pending_other_topic:
+        sub_topic = st.text_input("请填写您想咨询的主题", key="sub_topic_input")
+        if st.button("进入对话", type="primary", use_container_width=True):
+            cleaned_sub_topic = sub_topic.strip()
+            if cleaned_sub_topic:
+                st.session_state.topic = "其他"
+                st.session_state.sub_topic = cleaned_sub_topic
+                st.rerun()
+            else:
+                st.warning("请先填写想咨询的主题。")
+        if st.button("返回重新选择", use_container_width=True):
+            st.session_state.pending_other_topic = False
+            st.rerun()
+        return
 
     col1, col2 = st.columns(2)
     for index, topic in enumerate(TOPIC_OPTIONS):
         column = col1 if index % 2 == 0 else col2
         with column:
             if st.button(topic, key=f"topic_{topic}", use_container_width=True):
-                st.session_state.topic = topic
+                if topic == "其他":
+                    st.session_state.pending_other_topic = True
+                else:
+                    st.session_state.topic = topic
+                    st.session_state.sub_topic = None
                 st.rerun()
 
 if not st.session_state.topic:
     render_topic_selection()
     st.stop()
 
-# 聊天主界面
+if not st.session_state.greeting_added:
+    greeting_text = logic.get_group_settings(st.session_state)
+    st.session_state.messages.append({"role": "assistant", "content": greeting_text})
+    st.session_state.greeting_added = True
 
-with st.sidebar:
-    st.markdown("---")
-    # 允许用户提前结束实验 (符合伦理要求)
-    if st.button("🚪 结束本次咨询", type="secondary", help="点击此处可提前结束对话并进入反馈环节"):
-        st.session_state.is_finished = True
-        st.rerun()
+# 聊天主界面
 
 # 渲染历史消息
 for msg in st.session_state.messages:
@@ -220,6 +216,7 @@ if st.session_state.is_finished:
                     "group_exp": st.session_state.group_exp,
                     "group_id": final_group_id,
                     "topic": st.session_state.topic,
+                    "sub_topic": st.session_state.sub_topic,
                     "chat_history": st.session_state.messages,
                     "timestamp": firestore.SERVER_TIMESTAMP # 云端自动生成精确时间
                 }
