@@ -89,13 +89,11 @@ init_session_state()
 def render_header():
     group_acc = st.session_state.group_acc
     sidebar_text = (
-        "**资质认证**\n\n"
-        "本系统由专业研究团队监制，旨在为用户提供结构化的心理健康支持体验。"
+        "由知名精神科医院以及认知科学研究院基于大模型研发的聊天机器人"
     )
     if group_acc != "High":
         sidebar_text = (
-            "**免责声明**\n\n"
-            "本系统为科研测试用途，回复内容仅供参考，不作为医学诊断或治疗依据。"
+            "基于大模型创建的聊天机器人"
         )
     
     with st.sidebar:
@@ -150,6 +148,12 @@ if not st.session_state.greeting_added:
     st.session_state.messages.append({"role": "assistant", "content": greeting_text})
     st.session_state.greeting_added = True
 
+def finish_with_timeout_advice():
+    if not st.session_state.get("advice_given"):
+        advice_text = logic.generate_timeout_advice(st.session_state)
+        st.session_state.messages.append({"role": "assistant", "content": advice_text})
+    st.session_state.is_finished = True
+
 # 聊天主界面
 
 # 渲染历史消息
@@ -168,7 +172,7 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
 
     elapsed_min = (time.time() - st.session_state.start_time) / 60
     if elapsed_min >= CHAT_DURATION_MINUTES:
-        st.session_state.is_finished = True
+        finish_with_timeout_advice()
         st.rerun()
     
     # 2. 显示用户消息
@@ -185,7 +189,7 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
 
     elapsed_min = (time.time() - st.session_state.start_time) / 60
     if elapsed_min >= CHAT_DURATION_MINUTES:
-        st.session_state.is_finished = True
+        finish_with_timeout_advice()
         st.rerun()
 
 # 实验结束与数据闭环
@@ -217,6 +221,7 @@ if st.session_state.is_finished:
                     "group_id": final_group_id,
                     "topic": st.session_state.topic,
                     "sub_topic": st.session_state.sub_topic,
+                    "advice_source": st.session_state.get("advice_source"),
                     "chat_history": st.session_state.messages,
                     "timestamp": firestore.SERVER_TIMESTAMP # 云端自动生成精确时间
                 }

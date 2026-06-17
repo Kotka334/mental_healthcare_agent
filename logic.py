@@ -98,6 +98,83 @@ def run_hidden_analysis(messages):
         print(f"原始返回: {raw_content if 'raw_content' in locals() else 'None'}")
         return "记录三件好事" # 降级方案 (Fallback)
 
+def get_selected_topic(session_state):
+    return session_state.get("sub_topic") if session_state.get("topic") == "其他" else session_state.get("topic")
+
+def get_topic_general_advice(session_state):
+    topic = get_selected_topic(session_state) or "压力"
+    base_topic = session_state.get("topic")
+
+    advice_map = {
+        "工作": "将工作压力拆分成一个最小可执行任务，并为它设定清晰的开始和结束时间",
+        "学习": "把学习任务拆成短时间专注单元，并在每个单元结束后记录一个具体进展",
+        "人际关系": "先区分事实、感受和期待，再用一句清楚但不攻击的表达进行沟通",
+        "其他": f"围绕“{topic}”做一次压力记录，写下最困扰你的情境、感受和下一步小行动"
+    }
+    return advice_map.get(base_topic, f"围绕“{topic}”做一次压力记录，写下最困扰你的情境、感受和下一步小行动")
+
+def get_or_create_core_advice(session_state):
+    if 'core_advice' in session_state:
+        return session_state['core_advice']
+
+    session_state['core_advice'] = run_hidden_analysis(session_state['messages'])
+    session_state['advice_source'] = "llm_history_judgement"
+    return session_state['core_advice']
+
+def build_topic_instruction(session_state):
+    topic = get_selected_topic(session_state)
+    if not topic:
+        return ""
+
+    return (
+        f"\n\n本轮咨询主题是：{topic}。"
+        "请围绕该主题理解用户困扰、进行回应和提供建议；"
+        "如用户明显偏离主题，请温和地将对话带回该主题。"
+    )
+
+def build_first_advice_instruction(session_state, advice):
+    if session_state['group_exp'] == 'High':
+        template = prompts.INSTRUCTION_HIGH_EXP
+    else:
+        template = prompts.INSTRUCTION_LOW_EXP
+
+    topic = get_selected_topic(session_state) or "当前主题"
+    general_advice = get_topic_general_advice(session_state)
+
+    return (
+        template.format(core_advice=advice)
+        + "\n\n【历史有效性判断】请你根据完整对话 history 自行判断用户此前是否提供了可用于判断困扰的有效信息。"
+        + "如果 history 中有具体、可理解的困扰描述，请基于 history 给出诊断与建议。"
+        + f"如果 history 为空、明显无意义、测试输入、乱码、重复字符或无法判断真实困扰，请不要假设具体经历，只围绕“{topic}”给出通识性建议。"
+        + f"\n\n【候选个性化建议】如果 history 有效，可围绕这个建议展开：{advice}"
+        + f"\n\n【通识兜底建议】如果 history 无效，请围绕这个通识建议展开：{general_advice}"
+    )
+
+def generate_timeout_advice(session_state):
+    """
+    时间到但尚未给出建议时，强制生成一条诊断与建议，保证数据中包含建议内容。
+    """
+    messages = session_state['messages']
+    advice = get_or_create_core_advice(session_state)
+    system_instruction = prompts.COMMON_SYSTEM_PROMPT
+    system_instruction += build_topic_instruction(session_state)
+    system_instruction += "\n\n【当前阶段：Phase 2 - 诊断与建议】对话时间已到，且此前尚未给出诊断与建议。请立即给出一段完整、自然的诊断与建议，不要继续追问。"
+    system_instruction += f"\n\n{build_first_advice_instruction(session_state, advice)}"
+
+    api_messages = [{"role": "system", "content": system_instruction}] + messages
+
+    try:
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=api_messages,
+            temperature=0.7
+        )
+        session_state['advice_given'] = True
+        return completion.choices[0].message.content
+    except Exception as e:
+        session_state['advice_given'] = True
+        return f"根据目前的信息，建议你先尝试{advice}。这可以作为一个安全、简单的起点，帮助你把注意力从持续的压力或担忧中稍微拉出来。({e})"
+
 def generate_ai_response(session_state, user_input):
     """
     主生成函数：接收用户输入，返回 AI 回复
@@ -112,13 +189,7 @@ def generate_ai_response(session_state, user_input):
     
     # 2. 组装 System Prompt
     system_instruction = prompts.COMMON_SYSTEM_PROMPT
-    topic = session_state.get("sub_topic") if session_state.get("topic") == "其他" else session_state.get("topic")
-    if topic:
-        system_instruction += (
-            f"\n\n本轮咨询主题是：{topic}。"
-            "请围绕该主题理解用户困扰、进行回应和提供建议；"
-            "如用户明显偏离主题，请温和地将对话带回该主题。"
-        )
+    system_instruction += build_topic_instruction(session_state)
     
     # === Phase 1: 倾听 ===
     if current_stage == "Phase 1":
@@ -126,25 +197,17 @@ def generate_ai_response(session_state, user_input):
         
     # === Phase 2: 建议与跟进 ===
     elif current_stage == "Phase 2":
-        
-        # A. 如果还没生成过核心建议，先去生成
-        if 'core_advice' not in session_state:
-            session_state['core_advice'] = run_hidden_analysis(messages)
-        
-        advice = session_state['core_advice']
-        
+
+        # A. 如果还没生成过核心建议，先根据有效历史或主题通识建议生成
+        advice = get_or_create_core_advice(session_state)
+
         # B. 判断是“第一次给建议”还是“讨论建议”
         if not session_state['advice_given']:
             # --- 场景 1: 首次给出建议 ---
             print(">>> 首次输出建议 (First Delivery)")
-            if session_state['group_exp'] == 'High':
-                template = prompts.INSTRUCTION_HIGH_EXP
-            else:
-                template = prompts.INSTRUCTION_LOW_EXP
-            
-            final_instruction = template.format(core_advice=advice)
+            final_instruction = build_first_advice_instruction(session_state, advice)
             session_state['advice_given'] = True # 标记已送达
-            
+
         else:
             # --- 场景 2: 建议已给出，进行跟进讨论 ---
             print(">>> 进入跟进模式 (Follow-up)")
