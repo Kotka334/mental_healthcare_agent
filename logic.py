@@ -20,7 +20,12 @@ MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4.1")
 def get_group_settings(session_state):
     """根据用户选择的话题获取开场白"""
     topic = session_state.get("sub_topic") if session_state.get("topic") == "其他" else session_state.get("topic")
-    return f"请问您最近在{topic}上有什么困扰？"
+    topic_question = f"请问您最近在{topic}上有什么困扰？"
+    if session_state['group_acc'] == 'High':
+        greeting = prompts.GREETING_HIGH_ACC
+    else:
+        greeting = prompts.GREETING_LOW_ACC
+    return greeting.format(topic_question=topic_question)
 
 def calculate_stage(start_time):
     """
