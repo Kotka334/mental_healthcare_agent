@@ -69,6 +69,10 @@ def init_session_state():
             st.session_state.group_exp = qp["exp"]
         else:
             st.session_state.group_exp = random.choice(["High", "Low"])
+
+        # 将最终组别写回 URL，避免刷新或重新加载页面时重新随机分组。
+        st.query_params["acc"] = st.session_state.group_acc
+        st.query_params["exp"] = st.session_state.group_exp
         
         # 初始化对话状态
         st.session_state.messages = []      
