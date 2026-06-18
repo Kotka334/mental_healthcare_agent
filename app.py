@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import uuid
 import time
 import random
@@ -7,7 +8,8 @@ from firebase_admin import credentials, firestore
 
 import logic
 
-CHAT_DURATION_MINUTES = 5.0
+ADVICE_TRIGGER_MINUTES = 5.0
+CHAT_MAX_DURATION_MINUTES = 30.0
 TOPIC_OPTIONS = ["工作", "学习", "人际关系", "其他"]
 
 
@@ -17,6 +19,44 @@ st.set_page_config(
     page_icon="🧠",
     layout="centered",
     initial_sidebar_state="expanded"
+)
+
+st.markdown(
+    """
+    <style>
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    button[kind="header"] {
+        display: none !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        min-width: 18rem !important;
+        width: 18rem !important;
+        max-width: 18rem !important;
+        transform: translateX(0) !important;
+        visibility: visible !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        margin-left: 0 !important;
+        transform: translateX(0) !important;
+    }
+
+    @media (max-width: 900px) {
+        section[data-testid="stSidebar"] {
+            position: relative !important;
+            left: 0 !important;
+            flex-shrink: 0 !important;
+        }
+
+        [data-testid="stAppViewContainer"] {
+            min-width: 0 !important;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 def get_first_query_param(query_params, names):
@@ -106,6 +146,22 @@ def render_header():
         st.image("https://img.icons8.com/color/96/caduceus.png", width=60)
         st.markdown("### 心理健康聊天机器人")
         st.info(sidebar_text)
+        if should_show_persistent_end_controls():
+            st.divider()
+            if st.button("立即结束", key="sidebar_end_after_advice", type="primary", use_container_width=True):
+                finish_conversation()
+                st.rerun()
+
+def finish_conversation():
+    st.session_state.advice_completion_prompt_pending = False
+    st.session_state.is_finished = True
+
+def should_show_persistent_end_controls():
+    return (
+        st.session_state.get("advice_given")
+        and st.session_state.get("continue_after_advice")
+        and not st.session_state.get("is_finished")
+    )
 
 # 执行 UI 渲染
 render_header()
@@ -151,20 +207,36 @@ if not st.session_state.topic:
     render_topic_selection()
     st.stop()
 
-if not st.session_state.greeting_added:
-    greeting_text = logic.get_group_settings(st.session_state)
-    st.session_state.messages.append({"role": "assistant", "content": greeting_text})
-    st.session_state.greeting_added = True
-
-def finish_with_timeout_advice():
+def add_required_advice_if_needed():
     if not st.session_state.get("advice_given"):
         advice_text = logic.generate_timeout_advice(st.session_state)
         st.session_state.messages.append({"role": "assistant", "content": advice_text})
-    st.session_state.is_finished = True
+
+def finish_if_max_duration_reached():
+    if st.session_state.get("start_time") is None:
+        return False
+
+    elapsed_min = (time.time() - st.session_state.start_time) / 60
+    if elapsed_min < CHAT_MAX_DURATION_MINUTES:
+        return False
+
+    add_required_advice_if_needed()
+    finish_conversation()
+    return True
+
+def add_required_advice_if_due():
+    if st.session_state.get("start_time") is None:
+        return False
+
+    elapsed_min = (time.time() - st.session_state.start_time) / 60
+    if elapsed_min < ADVICE_TRIGGER_MINUTES or st.session_state.get("advice_given"):
+        return False
+
+    add_required_advice_if_needed()
+    return True
 
 def end_after_advice():
-    st.session_state.advice_completion_prompt_pending = False
-    st.session_state.is_finished = True
+    finish_conversation()
 
 def continue_after_advice():
     st.session_state.advice_completion_prompt_pending = False
@@ -174,14 +246,14 @@ def render_advice_completion_prompt():
     if not st.session_state.get("advice_completion_prompt_pending") or st.session_state.is_finished:
         return False
 
-    st.info("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流直到 5 分钟结束。")
+    st.info("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流。")
     col1, col2 = st.columns(2)
     with col1:
         if st.button("立即结束", type="primary", use_container_width=True):
             end_after_advice()
             st.rerun()
     with col2:
-        if st.button("继续聊到 5 分钟", use_container_width=True):
+        if st.button("继续对话", use_container_width=True):
             continue_after_advice()
             st.rerun()
     return True
@@ -191,13 +263,67 @@ def get_conversation_duration_seconds():
         return 0
     return max(0, int(time.time() - st.session_state.start_time))
 
+def scroll_to_latest_message():
+    components.html(
+        """
+        <script>
+        const scrollToLatest = () => {
+            const parentWindow = window.parent;
+            const parentDocument = parentWindow.document;
+            const candidates = [
+                parentDocument.scrollingElement,
+                parentDocument.documentElement,
+                parentDocument.body,
+                parentDocument.querySelector("[data-testid='stAppViewContainer']"),
+                parentDocument.querySelector("[data-testid='stMain']"),
+                parentDocument.querySelector("section.main")
+            ].filter(Boolean);
+
+            candidates.forEach((element) => {
+                element.scrollTop = element.scrollHeight;
+            });
+
+            const scrollingElement = parentDocument.scrollingElement || parentDocument.documentElement;
+            parentWindow.scrollTo({ top: scrollingElement.scrollHeight, behavior: "smooth" });
+        };
+        setTimeout(scrollToLatest, 50);
+        setTimeout(scrollToLatest, 400);
+        setTimeout(scrollToLatest, 900);
+        setTimeout(scrollToLatest, 1500);
+        </script>
+        """,
+        height=0
+    )
+
+def render_persistent_end_notice():
+    if not should_show_persistent_end_controls():
+        return
+
+    st.info("对话流程已达标，您可以点此随时退出对话。")
+    if st.button("立即结束", key="top_end_after_advice", type="primary", use_container_width=True):
+        finish_conversation()
+        st.rerun()
+
+if not st.session_state.greeting_added:
+    greeting_text = logic.get_group_settings(st.session_state)
+    st.session_state.messages.append({"role": "assistant", "content": greeting_text})
+    st.session_state.greeting_added = True
+
 # 聊天主界面
+if finish_if_max_duration_reached():
+    st.rerun()
+if add_required_advice_if_due():
+    st.rerun()
+
+render_persistent_end_notice()
 
 # 渲染历史消息
 for msg in st.session_state.messages:
     if msg["role"] != "system":
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
+
+scroll_to_latest_message()
 
 # 处理用户输入
 # 首次建议出现后，先用结束/继续选择替代输入框。
@@ -210,8 +336,12 @@ if not is_waiting_for_advice_choice and (prompt := st.chat_input("请输入您�
         st.session_state.start_time = time.time()
 
     elapsed_min = (time.time() - st.session_state.start_time) / 60
-    if elapsed_min >= CHAT_DURATION_MINUTES:
-        finish_with_timeout_advice()
+    if elapsed_min >= CHAT_MAX_DURATION_MINUTES:
+        add_required_advice_if_needed()
+        finish_conversation()
+        st.rerun()
+    if elapsed_min >= ADVICE_TRIGGER_MINUTES and not st.session_state.get("advice_given"):
+        add_required_advice_if_needed()
         st.rerun()
     
     # 2. 显示用户消息
@@ -225,10 +355,15 @@ if not is_waiting_for_advice_choice and (prompt := st.chat_input("请输入您�
             st.write(response_text)
     
     st.session_state.messages.append({"role": "assistant", "content": response_text})
+    scroll_to_latest_message()
 
     elapsed_min = (time.time() - st.session_state.start_time) / 60
-    if elapsed_min >= CHAT_DURATION_MINUTES:
-        finish_with_timeout_advice()
+    if elapsed_min >= CHAT_MAX_DURATION_MINUTES:
+        add_required_advice_if_needed()
+        finish_conversation()
+        st.rerun()
+    if elapsed_min >= ADVICE_TRIGGER_MINUTES and not st.session_state.get("advice_given"):
+        add_required_advice_if_needed()
         st.rerun()
     if st.session_state.get("advice_completion_prompt_pending") and not st.session_state.is_finished:
         st.rerun()

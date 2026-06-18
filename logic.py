@@ -189,6 +189,13 @@ def generate_ai_response(session_state, user_input):
     # 初始化 flag
     if 'advice_given' not in session_state:
         session_state['advice_given'] = False
+
+    if (
+        current_stage == "Phase 3"
+        and session_state.get("advice_given")
+        and session_state.get("continue_after_advice")
+    ):
+        current_stage = "Phase 2"
     
     # 2. 组装 System Prompt
     system_instruction = prompts.COMMON_SYSTEM_PROMPT
