@@ -148,6 +148,7 @@ def render_header():
         st.info(sidebar_text)
         if should_show_persistent_end_controls():
             st.divider()
+            st.info("对话流程已达标，您可以点此随时退出对话。")
             if st.button("立即结束", key="sidebar_end_after_advice", type="primary", use_container_width=True):
                 finish_conversation()
                 st.rerun()
