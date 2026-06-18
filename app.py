@@ -172,33 +172,24 @@ def continue_after_advice():
 
 def render_advice_completion_prompt():
     if not st.session_state.get("advice_completion_prompt_pending") or st.session_state.is_finished:
-        return
+        return False
 
-    if hasattr(st, "dialog"):
-        @st.dialog("当前对话已满足要求")
-        def completion_dialog():
-            st.write("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流直到 5 分钟结束。")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("立即结束", type="primary", use_container_width=True):
-                    end_after_advice()
-                    st.rerun()
-            with col2:
-                if st.button("继续聊到 5 分钟", use_container_width=True):
-                    continue_after_advice()
-                    st.rerun()
-        completion_dialog()
-    else:
-        st.info("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流直到 5 分钟结束。")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("立即结束", type="primary", use_container_width=True):
-                end_after_advice()
-                st.rerun()
-        with col2:
-            if st.button("继续聊到 5 分钟", use_container_width=True):
-                continue_after_advice()
-                st.rerun()
+    st.info("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流直到 5 分钟结束。")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("立即结束", type="primary", use_container_width=True):
+            end_after_advice()
+            st.rerun()
+    with col2:
+        if st.button("继续聊到 5 分钟", use_container_width=True):
+            continue_after_advice()
+            st.rerun()
+    return True
+
+def get_conversation_duration_seconds():
+    if st.session_state.get("start_time") is None:
+        return 0
+    return max(0, int(time.time() - st.session_state.start_time))
 
 # 聊天主界面
 
@@ -209,8 +200,10 @@ for msg in st.session_state.messages:
             st.write(msg["content"])
 
 # 处理用户输入
-# 如果实验结束 (is_finished=True)，输入框会自动禁用
-if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state.is_finished):
+# 首次建议出现后，先用结束/继续选择替代输入框。
+is_waiting_for_advice_choice = render_advice_completion_prompt()
+
+if not is_waiting_for_advice_choice and (prompt := st.chat_input("请输入您的想法...", disabled=st.session_state.is_finished)):
     
     # 1. 启动隐形计时器
     if st.session_state.start_time is None:
@@ -237,8 +230,8 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
     if elapsed_min >= CHAT_DURATION_MINUTES:
         finish_with_timeout_advice()
         st.rerun()
-
-render_advice_completion_prompt()
+    if st.session_state.get("advice_completion_prompt_pending") and not st.session_state.is_finished:
+        st.rerun()
 
 # 实验结束与数据闭环
 if st.session_state.is_finished:
@@ -263,6 +256,7 @@ if st.session_state.is_finished:
                 
                 # 2. 准备数据包
                 final_group_id = f"{st.session_state.group_acc}_{st.session_state.group_exp}"
+                conversation_duration_seconds = get_conversation_duration_seconds()
                 doc_data = {
                     "user_id": st.session_state.user_id,
                     "conversation_id": st.session_state.user_id,
@@ -272,6 +266,8 @@ if st.session_state.is_finished:
                     "topic": st.session_state.topic,
                     "sub_topic": st.session_state.sub_topic,
                     "advice_source": st.session_state.get("advice_source"),
+                    "conversation_duration_seconds": conversation_duration_seconds,
+                    "conversation_duration_minutes": round(conversation_duration_seconds / 60, 2),
                     "chat_history": st.session_state.messages,
                     "timestamp": firestore.SERVER_TIMESTAMP # 云端自动生成精确时间
                 }

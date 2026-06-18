@@ -146,6 +146,7 @@ def build_first_advice_instruction(session_state, advice):
         + "\n\n【历史有效性判断】请你根据完整对话 history 自行判断用户此前是否提供了可用于判断困扰的有效信息。"
         + "如果 history 中有具体、可理解的困扰描述，请基于 history 给出诊断与建议。"
         + f"如果 history 为空、明显无意义、测试输入、乱码、重复字符或无法判断真实困扰，请不要假设具体经历，只围绕“{topic}”给出通识性建议。"
+        + "\n\n【结尾限制】给出诊断与建议后必须用陈述句收尾，不要再提出问题、不要询问用户是否愿意尝试、不要询问建议是否可行、不要邀请用户继续评价建议。"
         + f"\n\n【候选个性化建议】如果 history 有效，可围绕这个建议展开：{advice}"
         + f"\n\n【通识兜底建议】如果 history 无效，请围绕这个通识建议展开：{general_advice}"
     )
@@ -158,7 +159,7 @@ def generate_timeout_advice(session_state):
     advice = get_or_create_core_advice(session_state)
     system_instruction = prompts.COMMON_SYSTEM_PROMPT
     system_instruction += build_topic_instruction(session_state)
-    system_instruction += "\n\n【当前阶段：Phase 2 - 诊断与建议】对话时间已到，且此前尚未给出诊断与建议。请立即给出一段完整、自然的诊断与建议，不要继续追问。"
+    system_instruction += "\n\n【当前阶段：Phase 2 - 诊断与建议】对话时间已到，且此前尚未给出诊断与建议。请立即给出一段完整、自然的诊断与建议，不要继续追问，也不要在结尾询问用户是否愿意尝试或是否觉得可行。"
     system_instruction += f"\n\n{build_first_advice_instruction(session_state, advice)}"
 
     api_messages = [{"role": "system", "content": system_instruction}] + messages
