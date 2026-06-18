@@ -170,9 +170,11 @@ def generate_timeout_advice(session_state):
             temperature=0.7
         )
         session_state['advice_given'] = True
+        session_state['advice_completion_prompt_pending'] = True
         return completion.choices[0].message.content
     except Exception as e:
         session_state['advice_given'] = True
+        session_state['advice_completion_prompt_pending'] = True
         return f"根据目前的信息，建议你先尝试{advice}。这可以作为一个安全、简单的起点，帮助你把注意力从持续的压力或担忧中稍微拉出来。({e})"
 
 def generate_ai_response(session_state, user_input):
@@ -207,6 +209,7 @@ def generate_ai_response(session_state, user_input):
             print(">>> 首次输出建议 (First Delivery)")
             final_instruction = build_first_advice_instruction(session_state, advice)
             session_state['advice_given'] = True # 标记已送达
+            session_state['advice_completion_prompt_pending'] = True
 
         else:
             # --- 场景 2: 建议已给出，进行跟进讨论 ---

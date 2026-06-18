@@ -82,6 +82,8 @@ def init_session_state():
         st.session_state.sub_topic = None
         st.session_state.pending_other_topic = False
         st.session_state.greeting_added = False
+        st.session_state.advice_completion_prompt_pending = False
+        st.session_state.continue_after_advice = False
         
         # 后台日志
         print(f"User Init: {st.session_state.user_id} | Group: {st.session_state.group_acc} / {st.session_state.group_exp}")
@@ -112,6 +114,8 @@ st.session_state.setdefault("topic", None)
 st.session_state.setdefault("sub_topic", None)
 st.session_state.setdefault("pending_other_topic", False)
 st.session_state.setdefault("greeting_added", False)
+st.session_state.setdefault("advice_completion_prompt_pending", False)
+st.session_state.setdefault("continue_after_advice", False)
 
 def render_topic_selection():
     st.markdown("### 请选择您想咨询的话题")
@@ -158,6 +162,44 @@ def finish_with_timeout_advice():
         st.session_state.messages.append({"role": "assistant", "content": advice_text})
     st.session_state.is_finished = True
 
+def end_after_advice():
+    st.session_state.advice_completion_prompt_pending = False
+    st.session_state.is_finished = True
+
+def continue_after_advice():
+    st.session_state.advice_completion_prompt_pending = False
+    st.session_state.continue_after_advice = True
+
+def render_advice_completion_prompt():
+    if not st.session_state.get("advice_completion_prompt_pending") or st.session_state.is_finished:
+        return
+
+    if hasattr(st, "dialog"):
+        @st.dialog("当前对话已满足要求")
+        def completion_dialog():
+            st.write("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流直到 5 分钟结束。")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("立即结束", type="primary", use_container_width=True):
+                    end_after_advice()
+                    st.rerun()
+            with col2:
+                if st.button("继续聊到 5 分钟", use_container_width=True):
+                    continue_after_advice()
+                    st.rerun()
+        completion_dialog()
+    else:
+        st.info("系统已经完成诊断与建议。您可以现在结束对话，也可以继续交流直到 5 分钟结束。")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("立即结束", type="primary", use_container_width=True):
+                end_after_advice()
+                st.rerun()
+        with col2:
+            if st.button("继续聊到 5 分钟", use_container_width=True):
+                continue_after_advice()
+                st.rerun()
+
 # 聊天主界面
 
 # 渲染历史消息
@@ -196,10 +238,13 @@ if prompt := st.chat_input("请输入您的想法...", disabled=st.session_state
         finish_with_timeout_advice()
         st.rerun()
 
+render_advice_completion_prompt()
+
 # 实验结束与数据闭环
 if st.session_state.is_finished:
     st.divider()
     st.success("本次对话已结束，感谢您的使用。")
+    st.info(f"您的对话 ID 为：{st.session_state.user_id}。请将该 ID 填写回问卷中。")
 
     if "data_saved" not in st.session_state:
         st.session_state.data_saved = False
@@ -220,6 +265,7 @@ if st.session_state.is_finished:
                 final_group_id = f"{st.session_state.group_acc}_{st.session_state.group_exp}"
                 doc_data = {
                     "user_id": st.session_state.user_id,
+                    "conversation_id": st.session_state.user_id,
                     "group_acc": st.session_state.group_acc,
                     "group_exp": st.session_state.group_exp,
                     "group_id": final_group_id,
