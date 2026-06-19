@@ -29,6 +29,33 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarCollapseButton"],
+    button[aria-label="Close sidebar"],
+    button[aria-label="Hide sidebar"],
+    button[title="Close sidebar"],
+    button[title="Hide sidebar"] {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+    }
+
+    section[data-testid="stSidebar"] {
+        width: 18rem !important;
+        min-width: 18rem !important;
+        max-width: 18rem !important;
+        flex-shrink: 0 !important;
+        transform: translateX(0) !important;
+        visibility: visible !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        margin-left: 0 !important;
+        transform: translateX(0) !important;
+        visibility: visible !important;
+    }
+
     .sidebar-disclaimer {
         box-sizing: border-box;
         width: 100%;
@@ -39,47 +66,70 @@ st.markdown(
         color: #1f5aa6;
         border-radius: 8px;
         padding: 0.9rem 1rem;
-        line-height: 1.55 !important;
-        font-size: 1rem !important;
+        line-height: 1.45 !important;
+        font-size: 0.92rem !important;
         font-weight: 600;
         margin: 0.75rem 0 1rem 0;
         white-space: normal;
         overflow: visible;
         overflow-wrap: anywhere;
-        word-break: normal;
+        word-break: break-word;
     }
 
-    .main-disclaimer {
-        box-sizing: border-box;
-        width: 100%;
-        height: auto;
-        min-height: fit-content;
-        background: #dfe9fb;
-        color: #1f5aa6;
-        border-radius: 8px;
-        padding: 0.75rem 0.9rem;
-        line-height: 1.45 !important;
-        font-size: 0.95rem !important;
-        font-weight: 600;
-        margin: 0 0 1rem 0;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        display: none;
-    }
-
-    .disclaimer-line {
-        display: block;
-        width: 100%;
-    }
-
-    @media (max-width: 900px) {
-        .main-disclaimer {
-            display: block;
-        }
-    }
     </style>
     """,
     unsafe_allow_html=True
+)
+
+components.html(
+    """
+    <script>
+    const forceSidebarOpen = () => {
+        const doc = window.parent.document;
+        const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+        const openButton =
+            doc.querySelector('[data-testid="collapsedControl"] button') ||
+            doc.querySelector('button[data-testid="collapsedControl"]') ||
+            doc.querySelector('button[aria-label="Open sidebar"]') ||
+            doc.querySelector('button[title="Open sidebar"]');
+
+        if (sidebar && sidebar.getAttribute("aria-expanded") === "false" && openButton) {
+            openButton.click();
+        }
+
+        if (sidebar) {
+            if (sidebar.style.transform !== "translateX(0px)" && sidebar.style.transform !== "translateX(0)") {
+                sidebar.style.transform = "translateX(0)";
+            }
+            if (sidebar.style.visibility !== "visible") {
+                sidebar.style.visibility = "visible";
+            }
+            if (sidebar.style.width !== "18rem") {
+                sidebar.style.width = "18rem";
+            }
+            if (sidebar.style.minWidth !== "18rem") {
+                sidebar.style.minWidth = "18rem";
+            }
+            if (sidebar.style.maxWidth !== "18rem") {
+                sidebar.style.maxWidth = "18rem";
+            }
+        }
+    };
+
+    forceSidebarOpen();
+    setTimeout(forceSidebarOpen, 100);
+    setTimeout(forceSidebarOpen, 500);
+    setTimeout(forceSidebarOpen, 1200);
+
+    const observer = new MutationObserver(forceSidebarOpen);
+    observer.observe(window.parent.document.body, {
+        attributes: true,
+        childList: true,
+        subtree: true
+    });
+    </script>
+    """,
+    height=0
 )
 
 def get_first_query_param(query_params, names):
@@ -155,24 +205,13 @@ def init_session_state():
 # 运行初始化
 init_session_state()
 
-def get_sidebar_disclaimer_lines():
+def get_sidebar_disclaimer_text():
     if st.session_state.group_acc == "High":
-        return [
-            "由知名精神科医院以及",
-            "认知科学研究院",
-            "基于大模型研发的聊天机器人"
-        ]
-    return [
-        "基于大模型创建的",
-        "聊天机器人"
-    ]
+        return "由知名精神科医院以及认知科学研究院基于大模型研发的聊天机器人"
+    return "基于大模型创建的聊天机器人"
 
 def render_disclaimer_html(class_name):
-    lines = "".join(
-        f'<span class="disclaimer-line">{line}</span>'
-        for line in get_sidebar_disclaimer_lines()
-    )
-    return f'<div class="{class_name}">{lines}</div>'
+    return f'<div class="{class_name}">{get_sidebar_disclaimer_text()}</div>'
 
 # 动态 UI 渲染
 def render_header():
@@ -200,7 +239,6 @@ def should_show_persistent_end_controls():
 
 # 执行 UI 渲染
 render_header()
-st.markdown(render_disclaimer_html("main-disclaimer"), unsafe_allow_html=True)
 
 st.session_state.setdefault("topic", None)
 st.session_state.setdefault("sub_topic", None)
