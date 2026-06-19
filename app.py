@@ -29,39 +29,12 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    section[data-testid="stSidebar"] {
-        min-width: 21rem !important;
-        width: 21rem !important;
-        max-width: 21rem !important;
-        overflow-x: hidden !important;
-    }
-
-    section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-        padding: 1.5rem 1.25rem !important;
-        box-sizing: border-box !important;
-    }
-
-    .sidebar-logo {
-        display: block;
-        width: 60px !important;
-        height: 60px !important;
-        object-fit: contain;
-        margin: 0 0 1.25rem 0;
-    }
-
-    .sidebar-title {
-        color: #30313d;
-        font-size: 1.35rem !important;
-        font-weight: 700;
-        line-height: 1.35;
-        margin: 0 0 1rem 0;
-        white-space: normal;
-    }
-
     .sidebar-disclaimer {
         box-sizing: border-box;
         width: 100%;
         max-width: 100%;
+        height: auto;
+        min-height: fit-content;
         background: #dfe9fb;
         color: #1f5aa6;
         border-radius: 8px;
@@ -76,19 +49,32 @@ st.markdown(
         word-break: normal;
     }
 
-    @media (max-width: 700px) {
-        section[data-testid="stSidebar"] {
-            min-width: min(21rem, 92vw) !important;
-            width: min(21rem, 92vw) !important;
-            max-width: 92vw !important;
-        }
+    .main-disclaimer {
+        box-sizing: border-box;
+        width: 100%;
+        height: auto;
+        min-height: fit-content;
+        background: #dfe9fb;
+        color: #1f5aa6;
+        border-radius: 8px;
+        padding: 0.75rem 0.9rem;
+        line-height: 1.45 !important;
+        font-size: 0.95rem !important;
+        font-weight: 600;
+        margin: 0 0 1rem 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        display: none;
+    }
 
-        .sidebar-title {
-            font-size: 1.2rem !important;
-        }
+    .disclaimer-line {
+        display: block;
+        width: 100%;
+    }
 
-        .sidebar-disclaimer {
-            font-size: 0.95rem !important;
+    @media (max-width: 900px) {
+        .main-disclaimer {
+            display: block;
         }
     }
     </style>
@@ -169,35 +155,31 @@ def init_session_state():
 # 运行初始化
 init_session_state()
 
-def get_sidebar_disclaimer_text():
+def get_sidebar_disclaimer_lines():
     if st.session_state.group_acc == "High":
-        return "由知名精神科医院以及认知科学研究院基于大模型研发的聊天机器人"
-    return "基于大模型创建的聊天机器人"
+        return [
+            "由知名精神科医院以及",
+            "认知科学研究院",
+            "基于大模型研发的聊天机器人"
+        ]
+    return [
+        "基于大模型创建的",
+        "聊天机器人"
+    ]
+
+def render_disclaimer_html(class_name):
+    lines = "".join(
+        f'<span class="disclaimer-line">{line}</span>'
+        for line in get_sidebar_disclaimer_lines()
+    )
+    return f'<div class="{class_name}">{lines}</div>'
 
 # 动态 UI 渲染
 def render_header():
-    sidebar_text = get_sidebar_disclaimer_text()
-    
     with st.sidebar:
-        st.markdown(
-            """
-            <img class="sidebar-logo" style="display:block;width:60px;height:60px;object-fit:contain;margin:0 0 1.25rem 0;" src="https://img.icons8.com/color/96/caduceus.png" alt="">
-            <div class="sidebar-title" style="color:#30313d;font-size:1.35rem;font-weight:700;line-height:1.35;margin:0 0 1rem 0;white-space:normal;">心理健康聊天机器人</div>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            (
-                '<div class="sidebar-disclaimer" '
-                'style="box-sizing:border-box;width:100%;max-width:100%;'
-                'background:#dfe9fb;color:#1f5aa6;border-radius:8px;'
-                'padding:0.9rem 1rem;line-height:1.55;font-size:1rem;'
-                'font-weight:600;margin:0.75rem 0 1rem 0;'
-                'white-space:normal;overflow:visible;overflow-wrap:anywhere;'
-                f'word-break:normal;">{sidebar_text}</div>'
-            ),
-            unsafe_allow_html=True
-        )
+        st.image("https://img.icons8.com/color/96/caduceus.png", width=60)
+        st.markdown("### 心理健康聊天机器人")
+        st.markdown(render_disclaimer_html("sidebar-disclaimer"), unsafe_allow_html=True)
         if should_show_persistent_end_controls():
             st.divider()
             st.info("对话流程已达标，您可以点此随时退出对话。")
@@ -218,6 +200,7 @@ def should_show_persistent_end_controls():
 
 # 执行 UI 渲染
 render_header()
+st.markdown(render_disclaimer_html("main-disclaimer"), unsafe_allow_html=True)
 
 st.session_state.setdefault("topic", None)
 st.session_state.setdefault("sub_topic", None)
