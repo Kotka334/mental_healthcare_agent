@@ -16,6 +16,22 @@ INVALID_ID_VALUES = {
     "uid", "userid", "user_id", "id",
     "test", "测试", "占位符"
 }
+VALID_GROUPS = {
+    "High_High": ("High", "High"),
+    "High_Low": ("High", "Low"),
+    "Low_High": ("Low", "High"),
+    "Low_Low": ("Low", "Low")
+}
+GROUP_ALIASES = {
+    "hh": "High_High",
+    "hl": "High_Low",
+    "lh": "Low_High",
+    "ll": "Low_Low",
+    "high_high": "High_High",
+    "high_low": "High_Low",
+    "low_high": "Low_High",
+    "low_low": "Low_Low"
+}
 
 
 # 基础配置与状态初始化 (Setup & State Management)
@@ -148,6 +164,21 @@ def get_first_query_param(query_params, names):
 
     return None, None
 
+def get_group_from_query(query_params):
+    group_value, group_key = get_first_query_param(
+        query_params,
+        ["group", "Group", "GROUP", "group_id", "groupId", "GroupId"]
+    )
+    if not group_value:
+        return None, None
+
+    normalized = str(group_value).strip().replace("-", "_").replace(" ", "_")
+    canonical = GROUP_ALIASES.get(normalized.lower())
+    if canonical in VALID_GROUPS:
+        return canonical, group_key
+
+    return None, group_key
+
 def init_session_state():
     """初始化用户 Session，处理随机分组或强制分组逻辑"""
     if "user_id" not in st.session_state:
@@ -173,18 +204,26 @@ def init_session_state():
             st.session_state.user_id_source = "本地随机生成"
         st.session_state.initial_query_params = dict(qp)
         
-        if "acc" in qp and qp["acc"] in ["High", "Low"]:
-            st.session_state.group_acc = qp["acc"]
+        incoming_group, incoming_group_key = get_group_from_query(qp)
+        if incoming_group:
+            st.session_state.group_acc, st.session_state.group_exp = VALID_GROUPS[incoming_group]
+            st.session_state.group_source = f"URL 参数: {incoming_group_key}"
         else:
-            st.session_state.group_acc = random.choice(["High", "Low"])
-            
-        if "exp" in qp and qp["exp"] in ["High", "Low"]:
-            st.session_state.group_exp = qp["exp"]
-        else:
-            st.session_state.group_exp = random.choice(["High", "Low"])
+            if "acc" in qp and qp["acc"] in ["High", "Low"]:
+                st.session_state.group_acc = qp["acc"]
+            else:
+                st.session_state.group_acc = random.choice(["High", "Low"])
+                
+            if "exp" in qp and qp["exp"] in ["High", "Low"]:
+                st.session_state.group_exp = qp["exp"]
+            else:
+                st.session_state.group_exp = random.choice(["High", "Low"])
+            st.session_state.group_source = "URL 参数 acc/exp 或本地随机生成"
 
         # 将最终组别写回 URL，避免刷新或重新加载页面时重新随机分组。
+        final_group_id = f"{st.session_state.group_acc}_{st.session_state.group_exp}"
         st.query_params["uid"] = st.session_state.user_id
+        st.query_params["group"] = final_group_id
         st.query_params["acc"] = st.session_state.group_acc
         st.query_params["exp"] = st.session_state.group_exp
         
@@ -471,6 +510,7 @@ if st.session_state.is_finished:
                     "conversation_id": st.session_state.user_id,
                     "group_acc": st.session_state.group_acc,
                     "group_exp": st.session_state.group_exp,
+                    "group": final_group_id,
                     "group_id": final_group_id,
                     "topic": st.session_state.topic,
                     "sub_topic": st.session_state.sub_topic,
